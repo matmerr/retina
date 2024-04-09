@@ -1,13 +1,11 @@
-//go:build experimental
-
 package pktmon
 
-// #cgo CFLAGS: -I c:/some/directory/on/disk/retina/pkg/plugin/windows/pktmon/packetmonitorsupport
-// #cgo LDFLAGS: -L c:/some/directory/on/disk/retina/pkg/plugin/windows/pktmon/packetmonitorsupport
+// #cgo CFLAGS: -I packetmonitorsupport
+// #cgo LDFLAGS: -L packetmonitorsupport
 // #cgo LDFLAGS: -lpktmonapi -lws2_32
 //
-// #include "Packetmonitor.h"
-// #include "Packetmonitorpacket.h"
+// #include "PacketMonitor.h"
+// #include "packetmonitorpacket.h"
 // #include "packetmonitorsupportutil.h"
 // #include "packetmonitorsupport.h"
 // #include "packetmonitorsupport.c"
@@ -16,21 +14,25 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	golog "log"
 	"unsafe"
 
 	"github.com/cilium/cilium/api/v1/flow"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/microsoft/retina/pkg/log"
+	"github.com/microsoft/retina/pkg/metrics"
 )
 
 var (
-	ErrFailedToStartPktmonPacketCapture error = fmt.Errorf("Failed to start a pktmon packet capture")
-	ErrFailedToParseWithGoPacket        error = fmt.Errorf("Failed to parse with gopacket")
-	ErrNotSupported                     error = fmt.Errorf("Not supported")
-	ErrUnknownPacketType                error = fmt.Errorf("Unknown packet type")
+	ErrFailedToParseWithGoPacket  error = fmt.Errorf("Failed to parse with gopacket")
+	ErrNotSupported               error = fmt.Errorf("Not supported")
+	ErrFailedToStartPacketCapture error = fmt.Errorf("Failed to start pktmon packet capture")
+	ErrUnknownPacketType          error = fmt.Errorf("Unknown packet type")
 
-	defaultBufferMultiplier int = 1
+	VarDefaultBufferMultiplier = 10
+
+	TruncationSize = 128
 )
 
 type WinPktMon struct {
@@ -41,31 +43,78 @@ func (w *WinPktMon) Initialize() error {
 	var UserContext C.PACKETMONITOR_STREAM_EVENT_INFO
 
 	// calling packet capture routine concurrently
-	result := C.InitializePacketCapture(unsafe.Pointer(&UserContext), C.int(defaultBufferMultiplier))
+	fmt.Println("Starting (go)")
+	trunc := C.int(TruncationSize)
+	result := C.InitializePacketCapture(unsafe.Pointer(&UserContext), C.int(VarDefaultBufferMultiplier), trunc)
 	if result != 0 {
-		return fmt.Errorf("Pktmon initialize returned code %d, %w", result, ErrFailedToStartPktmonPacketCapture)
+		return fmt.Errorf("Error code %d, %w   ", result, ErrFailedToStartPacketCapture)
 	}
 
 	return nil
 }
 
+var usenextpacket = true
+
 func (w *WinPktMon) GetNextPacket() (*Packet, *Metadata, error) {
-	buffer := make([]byte, 9000)
-	var bufferSize C.int = 9000
+	buffer := make([]byte, 5000)
+	var bufferSize C.int = 5000 // Windows LSO MTU size, Pktmon ring buffers size in Pktmon dll is (64 * 4kb)
+
+	// Three memory buffers
+	// - Streaming feature descripter buffer
+	// - Descripter buffer
+	// - actual packet buffer (64 * 4kb)
 	var payloadLength C.int = 0
 	var StreamMetaData C.PACKETMONITOR_STREAM_METADATA_RETINA
 	var PacketHeaderInfo C.PACKETMONITOR_PACKET_HEADER_INFO
-	var MissedPackets C.int = 0
+	var MissedPacketsWrite C.int = 0 // packets getting missed in the driver
+	var MissedPacketsRead C.int = 0  // packets getting missed in the driver
 
-	// Note: if we pass nil to PacketHeaderInfo, it won't be populated. In the current form, both Go and C are parsing the buffer
-	// to create packet struct
-	C.GetNextPacket((*C.uchar)(unsafe.Pointer(&buffer[0])), bufferSize, &payloadLength, &StreamMetaData, &PacketHeaderInfo, &MissedPackets)
+	// Call the operation in a goroutine
+
+	if usenextpacket {
+		C.GetNextPacket((*C.uchar)(unsafe.Pointer(&buffer[0])), bufferSize, &payloadLength, &StreamMetaData, &PacketHeaderInfo, &MissedPacketsWrite, &MissedPacketsRead)
+	} else {
+		//
+		C.GetNextPacketArr((*C.uchar)(unsafe.Pointer(&buffer[0])), bufferSize, &payloadLength, &StreamMetaData, &PacketHeaderInfo, &MissedPacketsWrite, &MissedPacketsRead)
+	}
+
+	//	golog.Printf("Payload length: %d \n", int(payloadLength))
+
+	if int(MissedPacketsRead) > 0 {
+		golog.Printf("Missed packets read: %d\n", int(MissedPacketsRead))
+	}
+
+	if int(MissedPacketsWrite) > 0 {
+		golog.Printf("Missed packets write: %d\n", int(MissedPacketsWrite))
+	}
+
+	// Use select to wait for either the operation to complete or the context to timeout
 
 	packet, err := w.parseWithGoPacket(buffer, StreamMetaData)
 	if err != nil {
+		//fmt.Printf("Failed to parse with gopacket, using with error %v\n", err)
 		if errors.Is(err, ErrFailedToParseWithGoPacket) {
+
 			if PacketHeaderInfo.ParseErrorCode == 0 {
-				//w.l.Debug("Packet dropped", zap.Uint32("srcport", uint32(PacketHeaderInfo.PortLocal)), zap.Uint32("dstport", uint32(PacketHeaderInfo.PortRemote)), zap.Uint8("proto", uint8(PacketHeaderInfo.IpProtocol)), zap.Uint32("dropreason", uint32(StreamMetaData.DropReason)))
+
+				//fmt.Printf("Packet Source IP: %d\n", PacketHeaderInfo.SourceAddressV4)
+				//fmt.Printf("Packet Destination IP: %d\n", PacketHeaderInfo.DestinationAddressV4)
+				//fmt.Printf("Packet Source Port: %d\n", PacketHeaderInfo.PortLocal)
+				//fmt.Printf("Packet Destination Port: %d\n", PacketHeaderInfo.PortRemote)
+				//fmt.Printf("Packet Protocol: %d\n", PacketHeaderInfo.IpProtocol)
+				//fmt.Printf("Packet Direction: %d\n", StreamMetaData.DirectionName)
+				//fmt.Printf("Packet Drop Reason %d\n", StreamMetaData.DropReason)
+				//fmt.Printf("Packet Drop Location %d\n", StreamMetaData.DropLocation)
+
+				if StreamMetaData.DropReason != 0 {
+					fmt.Printf("Packet dropped from srcport %d to dstport %d, proto: %d, dropreason %d\n",
+						//PacketHeaderInfo.SourceAddressV4,
+						PacketHeaderInfo.PortLocal,
+						//PacketHeaderInfo.DestinationAddressV4,
+						PacketHeaderInfo.PortRemote,
+						PacketHeaderInfo.IpProtocol,
+						StreamMetaData.DropReason)
+				}
 
 				packet = &Packet{
 					SourcePort: uint32(PacketHeaderInfo.PortLocal),
@@ -79,21 +128,38 @@ func (w *WinPktMon) GetNextPacket() (*Packet, *Metadata, error) {
 				return nil, nil, fmt.Errorf("Error code %d: %s, %w", PacketHeaderInfo.ParseErrorCode, C.GoString(C.ParsePacketStatusToString(status)), ErrNotSupported)
 			}
 		} else {
-			return nil, nil, fmt.Errorf("Failed to parse with gopacket, error: %w", err)
+			return nil, nil, fmt.Errorf("Failed to parse with gopacket: %w", err)
 		}
 	}
 
-	timestamp := C.LargeIntegerToInt(StreamMetaData.TimeStamp)
+	var timestampint C.longlong
+
+	//golog.Printf("C timestamp: %d", StreamMetaData.TimeStamp)
+	C.LargeIntegerToInt(StreamMetaData.TimeStamp, &timestampint)
+	//golog.Printf("LargeIntegerToInt:   %d", timestampint)
+	timestamp := int64(timestampint)
+	//golog.Printf("Go timestamp: %d", int64(timestamp))
+
+	// convert from windows to unix time
+	var epochDifference int64 = 116444736000000000
+	var unixTime int64 = (timestamp - epochDifference) / 10000000
+
+	// Create a Time struct from the Unix time
+	//timestampunix := time.Unix(unixTime, 0)
+
+	// Print the time in a human-readable format
+	//golog.Printf("Time: %s\n", t.Format(time.RFC3339))
 
 	var verdict flow.Verdict
 	if StreamMetaData.DropReason != 0 {
 		verdict = flow.Verdict_DROPPED
+		fmt.Printf("Packet dropped from %s:%d to %s:%d, proto: %d, \t dropreason %s\n", packet.SourceIP, packet.SourcePort, packet.DestIP, packet.DestPort, packet.Protocol, metrics.GetDropReason(uint32(StreamMetaData.DropReason)))
 	} else {
 		verdict = flow.Verdict_FORWARDED
 	}
 
 	meta := &Metadata{
-		Timestamp:     int64(timestamp),
+		Timestamp:     int64(unixTime),
 		ComponentID:   uint32(StreamMetaData.ComponentId),
 		DropReason:    uint32(StreamMetaData.DropReason),
 		PayloadLength: uint64(payloadLength),
@@ -111,10 +177,9 @@ func (w *WinPktMon) parseWithGoPacket(buffer []byte, StreamMetaData C.PACKETMONI
 	} else if StreamMetaData.PacketType == 3 {
 		packet = gopacket.NewPacket(buffer, layers.LayerTypeIPv4, gopacket.Default)
 	} else {
-		return nil, fmt.Errorf("Failed to create packet: %w", ErrUnknownPacketType)
+		return nil, ErrUnknownPacketType
 	}
 
-	// surely there is a better struct somewhere to hold fivetuple
 	var minpacket Packet
 
 	// get IP layer from packet (src/dst ip address)
@@ -133,25 +198,10 @@ func (w *WinPktMon) parseWithGoPacket(buffer []byte, StreamMetaData C.PACKETMONI
 	if tcpLayer := packet.Layer(layers.LayerTypeTCP); tcpLayer != nil {
 		tcp, _ = tcpLayer.(*layers.TCP)
 
-		if tcp.SYN {
-			minpacket.syn = 1
-		}
-		if tcp.ACK {
-			minpacket.ack = 1
-		}
-		if tcp.FIN {
-			minpacket.fin = 1
-		}
-		if tcp.RST {
-			minpacket.rst = 1
-		}
-		if tcp.PSH {
-			minpacket.psh = 1
-		}
-		if tcp.URG {
-			minpacket.urg = 1
-		}
-
+		minpacket.syn = tcp.SYN
+		minpacket.ack = tcp.ACK
+		minpacket.fin = tcp.FIN
+		minpacket.rst = tcp.RST
 		minpacket.SourcePort = uint32(tcp.SrcPort)
 		minpacket.DestPort = uint32(tcp.DstPort)
 		minpacket.Protocol = 6
@@ -174,7 +224,8 @@ func (w *WinPktMon) parseWithGoPacket(buffer []byte, StreamMetaData C.PACKETMONI
 			qs = append(qs, string(q.Name))
 		}
 
-		//w.l.Debug("DNS Packet", zap.String("src", minpacket.SourceIP.String()), zap.String("dst", minpacket.DestIP.String()), zap.Strings("query", qs), zap.Strings("answer", as))
+		//fmt.Printf("DNS Packet, src:%s, dst: %s,  query: %+v, answer: %+v\n", minpacket.SourceIP, minpacket.DestIP, qs, as)
+		minpacket.dns = dns
 	}
 
 	return &minpacket, nil
