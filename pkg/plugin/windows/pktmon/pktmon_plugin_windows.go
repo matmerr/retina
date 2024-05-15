@@ -7,7 +7,6 @@ import (
 	golog "log"
 
 	v1 "github.com/cilium/cilium/pkg/hubble/api/v1"
-	"github.com/google/gopacket/layers"
 	kcfg "github.com/microsoft/retina/pkg/config"
 	"github.com/microsoft/retina/pkg/enricher"
 	"github.com/microsoft/retina/pkg/log"
@@ -81,13 +80,11 @@ func (p *PktMonPlugin) Start(ctx context.Context) error {
 	}
 
 	for {
-
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("pktmon context cancelled: %v", ctx.Err())
 		default:
-
-			packet, metadata, err := p.pkt.GetNextPacket()
+			fl, meta, packet, err := p.pkt.GetNextPacket()
 			if errors.Is(err, ErrNotSupported) {
 				continue
 			}
@@ -97,79 +94,21 @@ func (p *PktMonPlugin) Start(ctx context.Context) error {
 				continue
 			}
 
-			fl := utils.ToFlow(
-				metadata.Timestamp, // timestamp
-				packet.SourceIP,
-				packet.DestIP,
-				packet.SourcePort,
-				packet.DestPort,
-				packet.Protocol,
-				metadata.ComponentID, // observationPoint
-				metadata.Verdict,     // flow.Verdict
-			)
-			//metadata.DropReason,  // flow.Direction
-			//)
-
-			if fl == nil {
-				fmt.Println("error: flow is nil")
+			// do this here instead of GetNextPacket to keep higher level
+			// packet parsing out of L4 parsing
+			err = parseDNS(fl, meta, packet)
+			if err != nil {
+				golog.Printf("Error parsing DNS: %v\n", err)
 				continue
-			}
-			meta := &utils.RetinaMetadata{
-				//DropReason: metadata.DropReason,
-				Bytes: metadata.PayloadLength,
-			}
-
-			utils.AddPacketSize(meta, metadata.PayloadLength)
-
-			utils.AddTcpFlagsBool(fl, packet.syn, packet.ack, packet.fin, packet.rst, packet.psh, packet.urg)
-
-			if packet.dns != nil {
-				//fmt.Printf("qType %d\n", packet.dns.OpCode)
-				var qtype string
-				switch packet.dns.OpCode {
-				case layers.DNSOpCodeQuery:
-					qtype = "Q"
-				case layers.DNSOpCodeStatus:
-					qtype = "R"
-				default:
-					qtype = "U"
-				}
-
-				var as, qs []string
-				for _, a := range packet.dns.Answers {
-					if a.IP != nil {
-						as = append(as, a.IP.String())
-					}
-				}
-				for _, q := range packet.dns.Questions {
-					qs = append(qs, string(q.Name))
-				}
-
-				var query string
-				if len(packet.dns.Questions) > 0 {
-					query = string(packet.dns.Questions[0].Name[:])
-				}
-
-				fl.Verdict = utils.Verdict_DNS
-				metad := &utils.RetinaMetadata{
-					Bytes: metadata.PayloadLength,
-				}
-				utils.AddDNSInfo(fl, metad, qtype, uint32(packet.dns.ResponseCode), query, []string{qtype}, len(as), as)
-				fmt.Printf("added dns info src %s, dst %s, to flow with qtype %s, qtypereal %d, response code src %d, query %s, answers %v, num answers %d num qs %d\n", packet.SourceIP.String(), packet.DestIP.String(), qtype, packet.dns.OpCode, packet.dns.ResponseCode, query, as, len(packet.dns.Answers), len(packet.dns.Questions))
 			}
 
 			ev := &v1.Event{
 				Event:     fl,
 				Timestamp: fl.Time,
 			}
+
 			if p.enricher != nil {
-				// Create a context that will automatically cancel after a timeout
-
-				//golog.Printf("writing flow - timestamp: %d, src %s, dst %s, src port %d, dst port %d, protocol %d, verdict %d, drop reason %d, payload length %d\n", metadata.Timestamp, packet.SourceIP.String(), packet.DestIP.String(), packet.SourcePort, packet.DestPort, packet.Protocol, metadata.Verdict, metadata.DropReason, metadata.PayloadLength)
-
 				p.enricher.Write(ev)
-				//	golog.Printf("wrote to enricher\n")
-
 			} else {
 				fmt.Printf("enricher is nil when writing\n")
 			}

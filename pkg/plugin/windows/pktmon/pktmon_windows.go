@@ -22,6 +22,7 @@ import (
 	"github.com/google/gopacket/layers"
 	"github.com/microsoft/retina/pkg/log"
 	"github.com/microsoft/retina/pkg/metrics"
+	"github.com/microsoft/retina/pkg/utils"
 )
 
 var (
@@ -53,9 +54,7 @@ func (w *WinPktMon) Initialize() error {
 	return nil
 }
 
-var usenextpacket = true
-
-func (w *WinPktMon) GetNextPacket() (*Packet, *Metadata, error) {
+func (w *WinPktMon) GetNextPacket() (*flow.Flow, *utils.RetinaMetadata, gopacket.Packet, error) {
 	buffer := make([]byte, 5000)
 	var bufferSize C.int = 5000 // Windows LSO MTU size, Pktmon ring buffers size in Pktmon dll is (64 * 4kb)
 
@@ -69,16 +68,8 @@ func (w *WinPktMon) GetNextPacket() (*Packet, *Metadata, error) {
 	var MissedPacketsWrite C.int = 0 // packets getting missed in the driver
 	var MissedPacketsRead C.int = 0  // packets getting missed in the driver
 
-	// Call the operation in a goroutine
-
-	if usenextpacket {
-		C.GetNextPacket((*C.uchar)(unsafe.Pointer(&buffer[0])), bufferSize, &payloadLength, &StreamMetaData, &PacketHeaderInfo, &MissedPacketsWrite, &MissedPacketsRead)
-	} else {
-		//
-		C.GetNextPacketArr((*C.uchar)(unsafe.Pointer(&buffer[0])), bufferSize, &payloadLength, &StreamMetaData, &PacketHeaderInfo, &MissedPacketsWrite, &MissedPacketsRead)
-	}
-
-	//	golog.Printf("Payload length: %d \n", int(payloadLength))
+	// Note: if packet header info of nil is passed, then it wont fall back on to C parsing
+	C.GetNextPacket((*C.uchar)(unsafe.Pointer(&buffer[0])), bufferSize, &payloadLength, &StreamMetaData, nil, &MissedPacketsWrite, &MissedPacketsRead)
 
 	if int(MissedPacketsRead) > 0 {
 		golog.Printf("Missed packets read: %d\n", int(MissedPacketsRead))
@@ -88,145 +79,187 @@ func (w *WinPktMon) GetNextPacket() (*Packet, *Metadata, error) {
 		golog.Printf("Missed packets write: %d\n", int(MissedPacketsWrite))
 	}
 
-	// Use select to wait for either the operation to complete or the context to timeout
-
-	packet, err := w.parseWithGoPacket(buffer, StreamMetaData)
+	packet, err := w.parsePacket(buffer, StreamMetaData)
 	if err != nil {
-		//fmt.Printf("Failed to parse with gopacket, using with error %v\n", err)
 		if errors.Is(err, ErrFailedToParseWithGoPacket) {
 
+			// we will hit this if failing to parse with gopacket, and fall back to C parsing.
+			// However in the current impliementation, pulling source/dest info via C libs is nontrivial.
+			// To go through C parsing, pass the PacketHeaderInfo struct to the above C.GetNextPacket
+			// so marking this tombstone as todo and erroring out.
 			if PacketHeaderInfo.ParseErrorCode == 0 {
-
-				//fmt.Printf("Packet Source IP: %d\n", PacketHeaderInfo.SourceAddressV4)
-				//fmt.Printf("Packet Destination IP: %d\n", PacketHeaderInfo.DestinationAddressV4)
-				//fmt.Printf("Packet Source Port: %d\n", PacketHeaderInfo.PortLocal)
-				//fmt.Printf("Packet Destination Port: %d\n", PacketHeaderInfo.PortRemote)
-				//fmt.Printf("Packet Protocol: %d\n", PacketHeaderInfo.IpProtocol)
-				//fmt.Printf("Packet Direction: %d\n", StreamMetaData.DirectionName)
-				//fmt.Printf("Packet Drop Reason %d\n", StreamMetaData.DropReason)
-				//fmt.Printf("Packet Drop Location %d\n", StreamMetaData.DropLocation)
-
-				if StreamMetaData.DropReason != 0 {
-					fmt.Printf("Packet dropped from srcport %d to dstport %d, proto: %d, dropreason %d\n",
-						//PacketHeaderInfo.SourceAddressV4,
-						PacketHeaderInfo.PortLocal,
-						//PacketHeaderInfo.DestinationAddressV4,
-						PacketHeaderInfo.PortRemote,
-						PacketHeaderInfo.IpProtocol,
-						StreamMetaData.DropReason)
-				}
-
-				packet = &Packet{
-					SourcePort: uint32(PacketHeaderInfo.PortLocal),
-					DestPort:   uint32(PacketHeaderInfo.PortRemote),
-					Protocol:   uint8(PacketHeaderInfo.IpProtocol),
-				}
-				return nil, nil, fmt.Errorf("Failed to parse with gopacket, using C, but address not impl(src port %d, dst port %d, proto :%d)", PacketHeaderInfo.PortLocal, PacketHeaderInfo.PortRemote, PacketHeaderInfo.IpProtocol)
+				return nil, nil, nil, fmt.Errorf("failed to parse with gopacket, using C, but address not impl(src port %d, dst port %d, proto :%d)", PacketHeaderInfo.PortLocal, PacketHeaderInfo.PortRemote, PacketHeaderInfo.IpProtocol)
 
 			} else {
 				status := PacketHeaderInfo.ParseErrorCode
-				return nil, nil, fmt.Errorf("Error code %d: %s, %w", PacketHeaderInfo.ParseErrorCode, C.GoString(C.ParsePacketStatusToString(status)), ErrNotSupported)
+				return nil, nil, nil, fmt.Errorf("error code %d: %s, %w", PacketHeaderInfo.ParseErrorCode, C.GoString(C.ParsePacketStatusToString(status)), ErrNotSupported)
 			}
 		} else {
-			return nil, nil, fmt.Errorf("Failed to parse with gopacket: %w", err)
+			return nil, nil, nil, fmt.Errorf("failed to parse with gopacket: %w", err)
 		}
 	}
 
-	var timestampint C.longlong
+	// windows timestamp to unix timestamp
+	unixTime := w.getUnixTimestamp(StreamMetaData)
 
-	//golog.Printf("C timestamp: %d", StreamMetaData.TimeStamp)
+	// get src/dst ip, proto
+	ip, err := w.parseL4(packet)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to parse IP layer: %w", err)
+	}
+
+	// get src/dst ports from protocol layers
+	tcp, udp := &layers.TCP{}, &layers.UDP{}
+	srcPort, dstPort := uint32(0), uint32(0)
+	if ip.Protocol == layers.IPProtocolTCP {
+		tcp, err = w.parseTCP(packet)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to parse TCP layer: %w", err)
+		}
+		srcPort = uint32(tcp.SrcPort)
+		dstPort = uint32(tcp.DstPort)
+	} else if ip.Protocol == layers.IPProtocolUDP {
+		udp, err = w.parseUDP(packet)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to parse UDP layer: %w", err)
+		}
+		srcPort = uint32(udp.SrcPort)
+		dstPort = uint32(udp.DstPort)
+	}
+
+	// get verdict, forwarded, dropped, etc
+	verdict := w.getVerdict(StreamMetaData)
+	if verdict == flow.Verdict_DROPPED {
+		fmt.Printf("packet dropped from %s:%d to %s:%d, proto: %d, \t dropreason %s\n", ip.SrcIP, srcPort, ip.DstIP, dstPort, ip.Protocol, metrics.GetDropReason(uint32(StreamMetaData.DropReason)))
+	}
+
+	// create the flow using utils
+	fl := utils.ToFlow(
+		int64(unixTime), // timestamp
+		ip.SrcIP,
+		ip.DstIP,
+		srcPort,
+		dstPort,
+		uint8(ip.Protocol),
+		uint32(StreamMetaData.ComponentId), // observationPoint
+		verdict,                            // flow.Verdict
+	)
+
+	// add TCP flags now that we have flow
+	if ip.Protocol == layers.IPProtocolTCP {
+		utils.AddTcpFlagsBool(fl, tcp.SYN, tcp.ACK, tcp.FIN, tcp.RST, tcp.PSH, tcp.URG)
+	}
+
+	// add metadata
+	meta := &utils.RetinaMetadata{
+		Bytes: uint64(payloadLength),
+	}
+
+	return fl, meta, packet, nil
+}
+
+func (w *WinPktMon) getUnixTimestamp(StreamMetaData C.PACKETMONITOR_STREAM_METADATA_RETINA) int64 {
+	// use C conversion to pull Windows timestamp
+	var timestampint C.longlong
 	C.LargeIntegerToInt(StreamMetaData.TimeStamp, &timestampint)
-	//golog.Printf("LargeIntegerToInt:   %d", timestampint)
 	timestamp := int64(timestampint)
-	//golog.Printf("Go timestamp: %d", int64(timestamp))
 
 	// convert from windows to unix time
 	var epochDifference int64 = 116444736000000000
-	var unixTime int64 = (timestamp - epochDifference) / 10000000
-
-	// Create a Time struct from the Unix time
-	//timestampunix := time.Unix(unixTime, 0)
-
-	// Print the time in a human-readable format
-	//golog.Printf("Time: %s\n", t.Format(time.RFC3339))
-
-	var verdict flow.Verdict
-	if StreamMetaData.DropReason != 0 {
-		verdict = flow.Verdict_DROPPED
-		fmt.Printf("Packet dropped from %s:%d to %s:%d, proto: %d, \t dropreason %s\n", packet.SourceIP, packet.SourcePort, packet.DestIP, packet.DestPort, packet.Protocol, metrics.GetDropReason(uint32(StreamMetaData.DropReason)))
-	} else {
-		verdict = flow.Verdict_FORWARDED
-	}
-
-	meta := &Metadata{
-		Timestamp:     int64(unixTime),
-		ComponentID:   uint32(StreamMetaData.ComponentId),
-		DropReason:    uint32(StreamMetaData.DropReason),
-		PayloadLength: uint64(payloadLength),
-		Verdict:       verdict,
-	}
-
-	return packet, meta, nil
+	return (timestamp - epochDifference) / 10000000
 }
 
-func (w *WinPktMon) parseWithGoPacket(buffer []byte, StreamMetaData C.PACKETMONITOR_STREAM_METADATA_RETINA) (*Packet, error) {
-	var packet gopacket.Packet
-	// construct a 5 tuple showing src, dest ip and port
-	if StreamMetaData.PacketType == 1 {
-		packet = gopacket.NewPacket(buffer, layers.LayerTypeEthernet, gopacket.NoCopy)
-	} else if StreamMetaData.PacketType == 3 {
-		packet = gopacket.NewPacket(buffer, layers.LayerTypeIPv4, gopacket.Default)
-	} else {
-		return nil, ErrUnknownPacketType
+func (w *WinPktMon) getVerdict(StreamMetaData C.PACKETMONITOR_STREAM_METADATA_RETINA) flow.Verdict {
+	if StreamMetaData.DropReason != 0 {
+		return flow.Verdict_DROPPED
 	}
+	return flow.Verdict_FORWARDED
+}
 
-	var minpacket Packet
-
-	// get IP layer from packet (src/dst ip address)
+func (w *WinPktMon) parseL4(packet gopacket.Packet) (*layers.IPv4, error) {
 	ip := &layers.IPv4{}
 	if ipLayer := packet.Layer(layers.LayerTypeIPv4); ipLayer != nil {
 		ip, _ = ipLayer.(*layers.IPv4)
 	} else {
 		return nil, fmt.Errorf("Failed to parse IP layer %w", ErrFailedToParseWithGoPacket)
 	}
+	return ip, nil
+}
 
-	minpacket.SourceIP = ip.SrcIP
-	minpacket.DestIP = ip.DstIP
-
-	// get protocol layer from packet (src/dst port)
+func (w *WinPktMon) parseTCP(packet gopacket.Packet) (*layers.TCP, error) {
 	tcp := &layers.TCP{}
 	if tcpLayer := packet.Layer(layers.LayerTypeTCP); tcpLayer != nil {
 		tcp, _ = tcpLayer.(*layers.TCP)
-
-		minpacket.syn = tcp.SYN
-		minpacket.ack = tcp.ACK
-		minpacket.fin = tcp.FIN
-		minpacket.rst = tcp.RST
-		minpacket.SourcePort = uint32(tcp.SrcPort)
-		minpacket.DestPort = uint32(tcp.DstPort)
-		minpacket.Protocol = 6
-	} else if udpLayer := packet.Layer(layers.LayerTypeUDP); udpLayer != nil {
-		udp, _ := udpLayer.(*layers.UDP)
-		minpacket.SourcePort = uint32(udp.SrcPort)
-		minpacket.DestPort = uint32(udp.DstPort)
-		minpacket.Protocol = 17
 	} else {
-		return nil, fmt.Errorf("No TCP/UDP layer found %w", ErrFailedToParseWithGoPacket)
+		return nil, fmt.Errorf("Failed to parse TCP layer %w", ErrFailedToParseWithGoPacket)
+	}
+	return tcp, nil
+}
+
+func (w *WinPktMon) parseUDP(packet gopacket.Packet) (*layers.UDP, error) {
+	udp := &layers.UDP{}
+	if udpLayer := packet.Layer(layers.LayerTypeUDP); udpLayer != nil {
+		udp, _ = udpLayer.(*layers.UDP)
+	} else {
+		return nil, fmt.Errorf("Failed to parse UDP layer %w", ErrFailedToParseWithGoPacket)
+	}
+	return udp, nil
+}
+
+func (w *WinPktMon) parsePacket(buffer []byte, StreamMetaData C.PACKETMONITOR_STREAM_METADATA_RETINA) (gopacket.Packet, error) {
+	var packet gopacket.Packet
+	// Ethernet
+	if StreamMetaData.PacketType == 1 {
+		packet = gopacket.NewPacket(buffer, layers.LayerTypeEthernet, gopacket.NoCopy)
+
+		// IPv4
+	} else if StreamMetaData.PacketType == 3 {
+		packet = gopacket.NewPacket(buffer, layers.LayerTypeIPv4, gopacket.NoCopy)
+	} else {
+		return nil, ErrUnknownPacketType
+	}
+	return packet, nil
+}
+
+func parseDNS(fl *flow.Flow, metadata *utils.RetinaMetadata, packet gopacket.Packet) error {
+	dns := &layers.DNS{}
+	if dnsLayer := packet.Layer(layers.LayerTypeDNS); dnsLayer != nil {
+		dns, _ = dnsLayer.(*layers.DNS)
+	} else {
+		return nil
 	}
 
-	if dnsLayer := packet.Layer(layers.LayerTypeDNS); dnsLayer != nil {
-		dns, _ := dnsLayer.(*layers.DNS)
+	if dns != nil {
+		//fmt.Printf("qType %d\n", packet.dns.OpCode)
+		var qtype string
+		switch dns.OpCode {
+		case layers.DNSOpCodeQuery:
+			qtype = "Q"
+		case layers.DNSOpCodeStatus:
+			qtype = "R"
+		default:
+			qtype = "U"
+		}
+
 		var as, qs []string
 		for _, a := range dns.Answers {
-			as = append(as, a.String())
+			if a.IP != nil {
+				as = append(as, a.IP.String())
+			}
 		}
 		for _, q := range dns.Questions {
 			qs = append(qs, string(q.Name))
 		}
 
-		//fmt.Printf("DNS Packet, src:%s, dst: %s,  query: %+v, answer: %+v\n", minpacket.SourceIP, minpacket.DestIP, qs, as)
-		minpacket.dns = dns
+		var query string
+		if len(dns.Questions) > 0 {
+			query = string(dns.Questions[0].Name[:])
+		}
+
+		fl.Verdict = utils.Verdict_DNS
+
+		utils.AddDNSInfo(fl, metadata, qtype, uint32(dns.ResponseCode), query, []string{qtype}, len(as), as)
 	}
 
-	return &minpacket, nil
+	return nil
 }

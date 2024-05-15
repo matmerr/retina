@@ -6,27 +6,12 @@ import (
 	"github.com/cilium/cilium/api/v1/flow"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
+	"github.com/microsoft/retina/pkg/utils"
 )
 
 type PktMon interface {
 	Initialize() error
-	GetNextPacket() (*Packet, *Metadata, error)
-}
-
-type Packet struct {
-	SourceIP   net.IP
-	DestIP     net.IP
-	SourcePort uint32
-	DestPort   uint32
-	Protocol   uint8
-	Direction  string
-	syn        bool
-	ack        bool
-	fin        bool
-	rst        bool
-	psh        bool
-	urg        bool
-	dns        *layers.DNS
+	GetNextPacket() (*flow.Flow, *utils.RetinaMetadata, gopacket.Packet, error)
 }
 
 type MockPktMon struct{}
