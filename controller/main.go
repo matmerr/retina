@@ -71,7 +71,7 @@ func init() {
 }
 
 func main() {
-	fmt.Printf("starting Retina %v", version)
+	fmt.Printf("starting Retina %v\n", version)
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
