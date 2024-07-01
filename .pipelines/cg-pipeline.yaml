@@ -175,13 +175,21 @@ stages:
         steps:
           - checkout: self
             fetchTags: true
+
+          - task: Docker@2
+            displayName: Docker Login
+            inputs:
+              containerRegistry: $(WINDOWS_BUILDER_REGISTRY)
+              command: "login"
+              addPipelineData: false
+
           - task: PowerShell@2
             displayName: "Build Retina Windows Image (LTSC2022)"
             inputs:
               targetType: "inline"
               script: |
                 Import-Module -Name "$(Build.SourcesDirectory)\windows\docker\DockerBuildModule.psm1" -Force
-                Build-RetinaAgentImage -fullBuilderImageName $(WINDOWS_BUILDER_IMAGE) -registry $(BUILD_REGISTRY) -appInsightsID $(PROD_AI)
+                Build-RetinaAgentImage -fullBuilderImageName $(WINDOWS_BUILDER_IMAGE) -registry $(BUILD_REGISTRY)
                 Save-Image -imageName retina-agent -registry $(BUILD_REGISTRY)
 
           - task: PublishBuildArtifacts@1

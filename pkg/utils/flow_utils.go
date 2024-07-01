@@ -281,12 +281,18 @@ func AddDropReason(f *flow.Flow, meta *RetinaMetadata, dropReason uint32) {
 	meta.DropReason = DropReason(dropReason)
 
 	f.Verdict = flow.Verdict_DROPPED
-	f.EventType = &flow.CiliumEventType{
-		Type:    int32(api.MessageTypeDrop),
-		SubType: int32(api.TraceToNetwork), // This is a drop event and direction is determined later.
-	}
+
+	// Set the drop reason.
+	// Retina drop reasons are different from the drop reasons available in flow library.
+	// We map the ones available in flow library to the ones available in Retina.
+	// Rest are set to UNKNOWN. The details are added in the metadata.
 
 	f.DropReasonDesc = GetDropReasonDesc(meta.GetDropReason())
+
+	f.EventType = &flow.CiliumEventType{
+		Type:    int32(api.MessageTypeDrop),
+		SubType: int32(f.GetDropReasonDesc()), // This is the drop reason.
+	}
 }
 
 func DropReasonDescription(f *flow.Flow) string {

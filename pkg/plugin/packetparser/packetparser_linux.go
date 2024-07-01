@@ -5,14 +5,15 @@
 package packetparser
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
 	"path"
 	"runtime"
 	"sync"
-	"unsafe"
 
 	"github.com/cilium/cilium/api/v1/flow"
 	v1 "github.com/cilium/cilium/pkg/hubble/api/v1"
@@ -531,7 +532,12 @@ func (p *packetParser) processRecord(ctx context.Context, id int) {
 				zap.Int("worker_id", id),
 			)
 
-			bpfEvent := (*packetparserPacket)(unsafe.Pointer(&record.RawSample[0])) //nolint:typecheck
+			var bpfEvent packetparserPacket
+			err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &bpfEvent)
+			if err != nil {
+				p.l.Error("Error reading bpfEvent", zap.Error(err))
+				continue
+			}
 
 			// Post processing of the bpfEvent.
 			// Anything after this is required only for Pod level metrics.
@@ -572,8 +578,6 @@ func (p *packetParser) processRecord(ctx context.Context, id int) {
 
 			// Add metadata to the flow.
 			utils.AddRetinaMetadata(fl, meta)
-
-			p.l.Debug("Received packet", zap.Any("flow", fl))
 
 			// Write the event to the enricher.
 			ev := &v1.Event{
@@ -633,11 +637,9 @@ func (p *packetParser) readData() {
 
 	select {
 	case p.recordsChannel <- record:
-		p.l.Debug("Sent record to channel", zap.Any("record", record))
 	default:
 		// Channel is full, drop the record.
 		// We shouldn't slow down the perf array reader.
-		// p.l.Warn("Channel is full, dropping record", zap.Any("lost samples", record))
 		metrics.LostEventsCounter.WithLabelValues(utils.BufferedChannel, string(Name)).Inc()
 	}
 }
