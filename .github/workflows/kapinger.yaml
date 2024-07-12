@@ -26,8 +26,8 @@ jobs:
       - name: Build and push Windows image
         uses: docker/build-push-action@v2
         with:
-          context: ./hack/tools/kapinger
-          file: ./hack/tools/kapinger/Dockerfile.windows
+          context: hack/tools/kapinger
+          file: hack/tools/kapinger/Dockerfile.windows
           platforms: windows/amd64
           push: true
           tags: ghcr.io/${{ github.repository }}/kapinger:windows-${{ github.sha }}
@@ -35,8 +35,8 @@ jobs:
       - name: Build and push Linux image
         uses: docker/build-push-action@v2
         with:
-          context: ./hack/tools/kapinger
-          file: ./hack/tools/kapinger/Dockerfile
+          context: hack/tools/kapinger
+          file: hack/tools/kapinger/Dockerfile
           platforms: linux/amd64
           push: true
           tags: ghcr.io/${{ github.repository }}/kapinger:linux-${{ github.sha }}
