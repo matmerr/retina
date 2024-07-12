@@ -7,10 +7,10 @@ ENV GOARCH=amd64
 
 RUN echo "building kapinger for OS: $GOOS, ARCH: $GOARCH"
 RUN go mod download
+RUN ls
+RUN CGO_ENABLED=0 go build -o kapinger.exe .
 
-RUN CGO_ENABLED=0 go build -o kapinger.exe ./kapinger
-
-FROM  mcr.microsoft.com/windows/nanoserver:ltsc2022
+FROM --platform=windows/amd64 mcr.microsoft.com/windows/nanoserver:ltsc2022
 WORKDIR /build
 COPY --from=builder /build/kapinger.exe .
 CMD ["kapinger.exe"]
