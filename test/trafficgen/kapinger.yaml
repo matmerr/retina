@@ -109,7 +109,7 @@ spec:
       serviceAccountName: kapinger-sa
       containers:
         - name: kapinger
-          image: acnpublic.azurecr.io/kapinger:v1.0.0-rc4-4-g1bc8310a
+          image: acnpublic.azurecr.io/kapinger:v1.0.0-rc4-6-gdcddae25
           imagePullPolicy: Always
           resources:
             limits:

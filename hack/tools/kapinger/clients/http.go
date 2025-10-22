@@ -40,22 +40,22 @@ func (k *KapingerHTTPClient) MakeRequests(ctx context.Context) error {
 		case <-ticker.C:
 			go func() {
 				for i := 0; i < k.volume; i++ {
-					body, err := k.makeRequest(ctx)
+					statusCode, err := k.makeRequest(ctx)
 					if err != nil {
 						slog.Error("http client: could not make request", "error", err, "url", k.url)
 						return
 					}
-					slog.Info("http client: received response", "url", k.url, "response", string(body))
+					slog.Info("http client: received response", "url", k.url, "status_code", statusCode)
 				}
 			}()
 		}
 	}
 }
 
-func (k *KapingerHTTPClient) makeRequest(ctx context.Context) ([]byte, error) {
+func (k *KapingerHTTPClient) makeRequest(ctx context.Context) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", k.url, http.NoBody)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 
 	// Set the "Connection" header to "close"
@@ -64,15 +64,16 @@ func (k *KapingerHTTPClient) makeRequest(ctx context.Context) ([]byte, error) {
 	// Send the request
 	resp, err := k.client.Do(req)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	// Discard response body but ensure it's read to allow connection reuse
+	_, err = io.Copy(io.Discard, resp.Body)
 	if err != nil {
-		slog.Error("error reading response body", "url", k.url, "error", err)
-		return nil, err
+		slog.Error("error discarding response body", "url", k.url, "error", err)
+		return resp.StatusCode, err
 	}
 
-	return body, nil
+	return resp.StatusCode, nil
 }
