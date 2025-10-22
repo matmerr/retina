@@ -29,16 +29,26 @@ func main() {
 
 	var kapingerClients []clients.Client
 
-	// Create an HTTP httpclient with the custom Transport
-	httpclient, err := clients.NewKapingerHTTPClient(clientset, "app=kapinger", cfg.BurstVolume, cfg.BurstInterval, cfg.HTTPPort)
-	if err != nil {
-		log.Fatal(err)
+	// Create an HTTP httpclient with the custom Transport (mesh client)
+	if cfg.MeshClientEnabled {
+		httpclient, err := clients.NewKapingerHTTPClient(clientset, "app=kapinger", cfg.BurstVolume, cfg.BurstInterval, cfg.HTTPPort)
+		if err != nil {
+			log.Fatal(err)
+		}
+		kapingerClients = append(kapingerClients, httpclient)
+		log.Printf("Mesh client enabled")
+	} else {
+		log.Printf("Mesh client disabled")
 	}
-	kapingerClients = append(kapingerClients, httpclient)
 
 	// create and append a DNS client
-	dnsclient := clients.NewKapingerDNSClient(cfg.BurstVolume, cfg.BurstInterval)
-	kapingerClients = append(kapingerClients, dnsclient)
+	if cfg.DNSClientEnabled {
+		dnsclient := clients.NewKapingerDNSClient(cfg.BurstVolume, cfg.BurstInterval, cfg.DNSClientAddress)
+		kapingerClients = append(kapingerClients, dnsclient)
+		log.Printf("DNS client enabled, using address: %s", cfg.DNSClientAddress)
+	} else {
+		log.Printf("DNS client disabled")
+	}
 
 	// Initialize the random number generator with a seed based on the current time
 	rand.New(rand.NewSource(time.Now().UnixNano()))

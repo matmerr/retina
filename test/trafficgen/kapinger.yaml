@@ -47,7 +47,7 @@ spec:
       serviceAccountName: kapinger-sa
       containers:
         - name: kapinger
-          image: acnpublic.azurecr.io/kapinger:20241009.5
+          image: acnpublic.azurecr.io/kapinger:2024.28.1-7
           resources:
             limits:
               memory: 20Mi
@@ -76,6 +76,12 @@ spec:
               value: "500"
             - name: BURST_VOLUME
               value: "1"
+            - name: DNS_CLIENT_ENABLED
+              value: "true"
+            - name: DNS_CLIENT_ADDRESS
+              value: "retina.sh"
+            - name: MESH_CLIENT_ENABLED
+              value: "true"
           ports:
             - containerPort: 8080
 ---
@@ -121,6 +127,12 @@ spec:
               value: "8085"
             - name: UDP_PORT
               value: "8086"
+            - name: DNS_CLIENT_ENABLED
+              value: "false"
+            - name: DNS_CLIENT_ADDRESS
+              value: "retina.sh"
+            - name: MESH_CLIENT_ENABLED
+              value: "false"
           ports:
             - containerPort: 8080
 ---

@@ -13,21 +13,28 @@ const (
 	defaultUDPPort       = 8086
 	defaultBurstVolume   = 1
 	defaultBurstInterval = 500 * time.Millisecond
+	defaultDNSAddress    = "retina.sh"
 
-	EnvHTTPPort      = "HTTP_PORT"
-	EnvTCPPort       = "TCP_PORT"
-	EnvUDPPort       = "UDP_PORT"
-	EnvBurstVolume   = "BURST_VOLUME"
-	EnvBurstInterval = "BURST_INTERVAL_MS"
+	EnvHTTPPort         = "HTTP_PORT"
+	EnvTCPPort          = "TCP_PORT"
+	EnvUDPPort          = "UDP_PORT"
+	EnvBurstVolume      = "BURST_VOLUME"
+	EnvBurstInterval    = "BURST_INTERVAL_MS"
+	EnvDNSClientEnabled = "DNS_CLIENT_ENABLED"
+	EnvDNSClientAddress = "DNS_CLIENT_ADDRESS"
+	EnvMeshClientEnabled = "MESH_CLIENT_ENABLED"
 )
 
 // just basic homebrew config, no viper/cobra to keep binary tiny
 type KapingerConfig struct {
-	BurstVolume   int
-	BurstInterval time.Duration
-	HTTPPort      int
-	TCPPort       int
-	UDPPort       int
+	BurstVolume      int
+	BurstInterval    time.Duration
+	HTTPPort         int
+	TCPPort          int
+	UDPPort          int
+	DNSClientEnabled bool
+	DNSClientAddress string
+	MeshClientEnabled bool
 }
 
 // configmap later, but for now env is fine
@@ -68,6 +75,30 @@ func LoadConfigFromEnv() *KapingerConfig {
 	} else {
 		k.BurstInterval = time.Duration(burstInterval) * time.Millisecond
 		log.Printf("%s set to: %s\n", EnvBurstInterval, k.BurstInterval)
+	}
+
+	k.DNSClientEnabled, err = strconv.ParseBool(os.Getenv(EnvDNSClientEnabled))
+	if err != nil {
+		k.DNSClientEnabled = false
+		log.Printf("%s not set or invalid, defaulting to false\n", EnvDNSClientEnabled)
+	} else {
+		log.Printf("%s set to: %t\n", EnvDNSClientEnabled, k.DNSClientEnabled)
+	}
+
+	k.DNSClientAddress = os.Getenv(EnvDNSClientAddress)
+	if k.DNSClientAddress == "" {
+		k.DNSClientAddress = defaultDNSAddress
+		log.Printf("%s not set, defaulting to %s\n", EnvDNSClientAddress, defaultDNSAddress)
+	} else {
+		log.Printf("%s set to: %s\n", EnvDNSClientAddress, k.DNSClientAddress)
+	}
+
+	k.MeshClientEnabled, err = strconv.ParseBool(os.Getenv(EnvMeshClientEnabled))
+	if err != nil {
+		k.MeshClientEnabled = false
+		log.Printf("%s not set or invalid, defaulting to false\n", EnvMeshClientEnabled)
+	} else {
+		log.Printf("%s set to: %t\n", EnvMeshClientEnabled, k.MeshClientEnabled)
 	}
 
 	return k

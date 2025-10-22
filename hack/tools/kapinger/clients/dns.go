@@ -11,12 +11,14 @@ import (
 type KapingerDNSClient struct {
 	volume   int
 	interval time.Duration
+	address  string
 }
 
-func NewKapingerDNSClient(volume int, interval time.Duration) *KapingerDNSClient {
+func NewKapingerDNSClient(volume int, interval time.Duration, address string) *KapingerDNSClient {
 	return &KapingerDNSClient{
 		interval: time.Duration(interval),
 		volume:   volume,
+		address:  address,
 	}
 }
 
@@ -30,14 +32,12 @@ func (k *KapingerDNSClient) MakeRequests(ctx context.Context) error {
 		case <-ticker.C:
 			go func() {
 				for i := 0; i < k.volume; i++ {
-					domain := "retina.sh"
-
-					ips, err := net.LookupIP(domain)
+					ips, err := net.LookupIP(k.address)
 					if err != nil {
 						fmt.Printf("dns client: could not get IPs: %v\n", err)
 						return
 					}
-					log.Printf("dns client: resolved %s to %s\n", domain, ips)
+					log.Printf("dns client: resolved %s to %s\n", k.address, ips)
 				}
 			}()
 		}
