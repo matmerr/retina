@@ -37,14 +37,14 @@ func main() {
 
 	var kapingerClients []clients.Client
 
-	// Create an HTTP httpclient with the custom Transport (mesh client)
+	// Create a mesh client (Kubernetes service discovery based HTTP client)
 	if cfg.MeshClientEnabled {
-		httpclient, err := clients.NewKapingerHTTPClient(clientset, "app=kapinger", cfg.BurstVolume, cfg.BurstInterval, cfg.HTTPPort)
+		meshclient, err := clients.NewKapingerMeshClient(clientset, "app=kapinger", cfg.BurstVolume, cfg.BurstInterval, cfg.HTTPPort)
 		if err != nil {
 			slog.Error("failed to create mesh client", "error", err)
 			os.Exit(1)
 		}
-		kapingerClients = append(kapingerClients, httpclient)
+		kapingerClients = append(kapingerClients, meshclient)
 		slog.Info("mesh client enabled")
 	} else {
 		slog.Info("mesh client disabled")
@@ -57,6 +57,15 @@ func main() {
 		slog.Info("DNS client enabled", "address", cfg.DNSClientAddress)
 	} else {
 		slog.Info("DNS client disabled")
+	}
+
+	// create and append an HTTP client (simple URL-based HTTP client)
+	if cfg.HTTPClientEnabled {
+		httpclient := clients.NewKapingerHTTPClient(cfg.BurstVolume, cfg.BurstInterval, cfg.HTTPClientURL)
+		kapingerClients = append(kapingerClients, httpclient)
+		slog.Info("HTTP client enabled", "url", cfg.HTTPClientURL)
+	} else {
+		slog.Info("HTTP client disabled")
 	}
 
 	// Initialize the random number generator with a seed based on the current time

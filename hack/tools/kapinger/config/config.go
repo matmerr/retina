@@ -14,26 +14,31 @@ const (
 	defaultBurstVolume   = 1
 	defaultBurstInterval = 500 * time.Millisecond
 	defaultDNSAddress    = "retina.sh"
+	defaultHTTPURL       = "http://www.example.com"
 
-	EnvHTTPPort         = "HTTP_PORT"
-	EnvTCPPort          = "TCP_PORT"
-	EnvUDPPort          = "UDP_PORT"
-	EnvBurstVolume      = "BURST_VOLUME"
-	EnvBurstInterval    = "BURST_INTERVAL_MS"
-	EnvDNSClientEnabled = "DNS_CLIENT_ENABLED"
-	EnvDNSClientAddress = "DNS_CLIENT_ADDRESS"
+	EnvHTTPPort          = "HTTP_PORT"
+	EnvTCPPort           = "TCP_PORT"
+	EnvUDPPort           = "UDP_PORT"
+	EnvBurstVolume       = "BURST_VOLUME"
+	EnvBurstInterval     = "BURST_INTERVAL_MS"
+	EnvDNSClientEnabled  = "DNS_CLIENT_ENABLED"
+	EnvDNSClientAddress  = "DNS_CLIENT_ADDRESS"
+	EnvHTTPClientEnabled = "HTTP_CLIENT_ENABLED"
+	EnvHTTPClientURL     = "HTTP_CLIENT_URL"
 	EnvMeshClientEnabled = "MESH_CLIENT_ENABLED"
 )
 
 // just basic homebrew config, no viper/cobra to keep binary tiny
 type KapingerConfig struct {
-	BurstVolume      int
-	BurstInterval    time.Duration
-	HTTPPort         int
-	TCPPort          int
-	UDPPort          int
-	DNSClientEnabled bool
-	DNSClientAddress string
+	BurstVolume       int
+	BurstInterval     time.Duration
+	HTTPPort          int
+	TCPPort           int
+	UDPPort           int
+	DNSClientEnabled  bool
+	DNSClientAddress  string
+	HTTPClientEnabled bool
+	HTTPClientURL     string
 	MeshClientEnabled bool
 }
 
@@ -91,6 +96,22 @@ func LoadConfigFromEnv() *KapingerConfig {
 		slog.Info("config loaded", "env", EnvDNSClientAddress, "value", k.DNSClientAddress, "default", true)
 	} else {
 		slog.Info("config loaded", "env", EnvDNSClientAddress, "value", k.DNSClientAddress)
+	}
+
+	k.HTTPClientEnabled, err = strconv.ParseBool(os.Getenv(EnvHTTPClientEnabled))
+	if err != nil {
+		k.HTTPClientEnabled = false
+		slog.Info("config loaded", "env", EnvHTTPClientEnabled, "value", k.HTTPClientEnabled, "default", true)
+	} else {
+		slog.Info("config loaded", "env", EnvHTTPClientEnabled, "value", k.HTTPClientEnabled)
+	}
+
+	k.HTTPClientURL = os.Getenv(EnvHTTPClientURL)
+	if k.HTTPClientURL == "" {
+		k.HTTPClientURL = defaultHTTPURL
+		slog.Info("config loaded", "env", EnvHTTPClientURL, "value", k.HTTPClientURL, "default", true)
+	} else {
+		slog.Info("config loaded", "env", EnvHTTPClientURL, "value", k.HTTPClientURL)
 	}
 
 	k.MeshClientEnabled, err = strconv.ParseBool(os.Getenv(EnvMeshClientEnabled))

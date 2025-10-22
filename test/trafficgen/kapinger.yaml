@@ -80,8 +80,12 @@ spec:
               value: "true"
             - name: DNS_CLIENT_ADDRESS
               value: "retina.sh"
+            - name: HTTP_CLIENT_ENABLED
+              value: "true"
+            - name: HTTP_CLIENT_URL
+              value: "http://www.example.com"
             - name: MESH_CLIENT_ENABLED
-              value: "false"
+              value: "true"
           ports:
             - containerPort: 8080
 ---
@@ -131,6 +135,10 @@ spec:
               value: "false"
             - name: DNS_CLIENT_ADDRESS
               value: "retina.sh"
+            - name: HTTP_CLIENT_ENABLED
+              value: "false"
+            - name: HTTP_CLIENT_URL
+              value: "http://www.example.com"
             - name: MESH_CLIENT_ENABLED
               value: "false"
           ports:

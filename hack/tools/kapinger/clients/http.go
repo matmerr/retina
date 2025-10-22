@@ -2,80 +2,31 @@ package clients
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"time"
-
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
-)
-
-type TargetType string
-
-const (
-	Service TargetType = "service"
-	Pod     TargetType = "pod"
-
-	envTargetType = "TARGET_TYPE"
 )
 
 type KapingerHTTPClient struct {
-	client        http.Client
-	clientset     *kubernetes.Clientset
-	labelselector string
-	urls          []string
-	port          int
-	targettype    TargetType
-	volume        int
-	interval      time.Duration
+	volume   int
+	interval time.Duration
+	url      string
+	client   http.Client
 }
 
-func NewKapingerHTTPClient(clientset *kubernetes.Clientset, labelselector string, volume int, interval time.Duration, httpPort int) (*KapingerHTTPClient, error) {
-	k := KapingerHTTPClient{
+func NewKapingerHTTPClient(volume int, interval time.Duration, url string) *KapingerHTTPClient {
+	return &KapingerHTTPClient{
+		interval: time.Duration(interval),
+		volume:   volume,
+		url:      url,
 		client: http.Client{
 			Transport: &http.Transport{
 				DisableKeepAlives: true,
 			},
 			Timeout: 3 * time.Second,
 		},
-		labelselector: labelselector,
-		clientset:     clientset,
-		port:          httpPort,
-		volume:        volume,
-		interval:      interval,
 	}
-
-	targettype := os.Getenv(envTargetType)
-	if targettype != "" {
-		k.targettype = TargetType(targettype)
-	} else {
-		k.targettype = Service
-	}
-
-	var err error
-	switch k.targettype {
-	case Service:
-		k.urls, err = k.getServiceURLs()
-		if err != nil {
-			return nil, fmt.Errorf("error getting service URLs: %w", err)
-		}
-
-	case Pod:
-		k.urls, err = k.getPodURLs()
-
-	default:
-		return nil, fmt.Errorf("env TARGET_TYPE must be \"service\" or \"pod\"")
-	}
-	if err != nil {
-		return nil, fmt.Errorf("error getting IPs: %w", err)
-	}
-
-	return &k, nil
 }
 
 func (k *KapingerHTTPClient) MakeRequests(ctx context.Context) error {
@@ -88,22 +39,20 @@ func (k *KapingerHTTPClient) MakeRequests(ctx context.Context) error {
 		case <-ticker.C:
 			go func() {
 				for i := 0; i < k.volume; i++ {
-					for _, url := range k.urls {
-						body, err := k.makeRequest(ctx, url)
-						if err != nil {
-							slog.Error("error making request", "error", err, "url", url)
-						} else {
-							slog.Info("response received", "url", url, "response", string(body))
-						}
+					body, err := k.makeRequest(ctx)
+					if err != nil {
+						slog.Error("http client: could not make request", "error", err, "url", k.url)
+						return
 					}
+					slog.Info("http client: received response", "url", k.url, "response", string(body))
 				}
 			}()
 		}
 	}
 }
 
-func (k *KapingerHTTPClient) makeRequest(ctx context.Context, url string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
+func (k *KapingerHTTPClient) makeRequest(ctx context.Context) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", k.url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
@@ -120,74 +69,9 @@ func (k *KapingerHTTPClient) makeRequest(ctx context.Context, url string) ([]byt
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		slog.Error("error reading response body", "url", url, "error", err)
+		slog.Error("error reading response body", "url", k.url, "error", err)
 		return nil, err
 	}
 
 	return body, nil
-}
-
-func (k *KapingerHTTPClient) getServiceURLs() ([]string, error) {
-	urls := []string{}
-	services, err := k.clientset.CoreV1().Services(corev1.NamespaceAll).List(context.Background(), metav1.ListOptions{
-		LabelSelector: k.labelselector,
-	})
-	if err != nil {
-		return urls, fmt.Errorf("error getting services: %w", err)
-	}
-
-	// Extract the Service cluster IP addresses
-
-	for svc := range services.Items {
-		urls = append(urls, fmt.Sprintf("http://%s.%s.svc.cluster.local:%d/", services.Items[svc].Name, services.Items[svc].Namespace, k.port))
-	}
-	slog.Info("using service URLs", "urls", urls)
-	return urls, nil
-}
-
-func (k *KapingerHTTPClient) getPodURLs() ([]string, error) {
-	urls := []string{}
-	err := waitForPodsRunning(k.clientset, k.labelselector)
-	if err != nil {
-		return nil, fmt.Errorf("error waiting for pods to be in Running state: %w", err)
-	}
-
-	// Get all pods in the cluster with label app=agnhost
-	pods, err := k.clientset.CoreV1().Pods(corev1.NamespaceAll).List(context.Background(), metav1.ListOptions{
-		LabelSelector: k.labelselector,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("error getting pods: %w", err)
-	}
-
-	for _, pod := range pods.Items {
-		urls = append(urls, fmt.Sprintf("http://%s:%d", pod.Status.PodIP, k.port))
-	}
-	slog.Info("using pod URLs", "urls", urls)
-	return urls, nil
-}
-
-// waitForPodsRunning waits for all pods with the specified label to be in the Running phase
-func waitForPodsRunning(clientset *kubernetes.Clientset, labelSelector string) error {
-	return wait.ExponentialBackoff(wait.Backoff{
-		Duration: 5 * time.Second,
-		Factor:   1.5,
-	}, func() (bool, error) {
-		pods, err := clientset.CoreV1().Pods(corev1.NamespaceAll).List(context.Background(), metav1.ListOptions{
-			LabelSelector: labelSelector,
-		})
-		if err != nil {
-			slog.Error("error getting pods", "error", err)
-			return false, nil
-		}
-
-		for _, pod := range pods.Items {
-			if pod.Status.Phase != corev1.PodRunning {
-				slog.Info("waiting for pod to be in Running state", "pod", pod.Name, "currentPhase", pod.Status.Phase)
-				return false, nil
-			}
-		}
-
-		return true, nil
-	})
 }

@@ -2,7 +2,8 @@ package clients
 
 import (
 	"context"
-	"log/slog"
+	"fmt"
+	"log"
 	"net"
 	"time"
 )
@@ -26,17 +27,17 @@ func (k *KapingerDNSClient) MakeRequests(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Info("DNS client context done")
+			log.Printf("DNS client context done")
 			return nil
 		case <-ticker.C:
 			go func() {
 				for i := 0; i < k.volume; i++ {
 					ips, err := net.LookupIP(k.address)
 					if err != nil {
-						slog.Error("dns client: could not get IPs", "error", err, "address", k.address)
+						fmt.Printf("dns client: could not get IPs: %v\n", err)
 						return
 					}
-					slog.Info("dns client: resolved address", "address", k.address, "ips", ips)
+					log.Printf("dns client: resolved %s to %s\n", k.address, ips)
 				}
 			}()
 		}
