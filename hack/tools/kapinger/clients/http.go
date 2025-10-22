@@ -24,7 +24,8 @@ func NewKapingerHTTPClient(volume int, interval time.Duration, url string) *Kapi
 			Transport: &http.Transport{
 				DisableKeepAlives: true,
 			},
-			Timeout: 3 * time.Second,
+			Timeout:       2 * time.Second,
+			CheckRedirect: nil, // Follow redirects (default behavior, up to 10 redirects)
 		},
 	}
 }

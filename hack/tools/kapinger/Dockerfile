@@ -15,6 +15,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o kapinger-arm64 .
 
 FROM --platform=linux/amd64 scratch AS linux-amd64
 WORKDIR /app
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /build/kapinger .
 CMD ["./kapinger"]
 
@@ -26,5 +27,6 @@ CMD [ "/c", "kapinger.exe" ]
 
 FROM --platform=linux/arm64 scratch AS linux-arm64
 WORKDIR /app
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /build/kapinger-arm64 .
 CMD ["./kapinger-arm64"]
