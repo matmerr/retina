@@ -14,7 +14,7 @@ const (
 	defaultBurstVolume   = 1
 	defaultBurstInterval = 500 * time.Millisecond
 	defaultDNSAddress    = "retina.sh"
-	defaultHTTPURL       = "http://www.example.com"
+	defaultHTTPURL       = "retina.sh"
 
 	EnvHTTPPort          = "HTTP_PORT"
 	EnvTCPPort           = "TCP_PORT"
