@@ -3,7 +3,7 @@ package servers
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"strings"
 )
@@ -30,7 +30,7 @@ func (k *KapingerUDPServer) Start(ctx context.Context) error {
 		fmt.Println(err)
 		return err
 	}
-	log.Printf("[UDP] Listening on %+v\n", connection.LocalAddr().String())
+	slog.Info("UDP server listening", "addr", connection.LocalAddr().String())
 
 	defer connection.Close()
 	buffer := make([]byte, k.buffersize)
@@ -38,7 +38,7 @@ func (k *KapingerUDPServer) Start(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Println("Exiting UDP server")
+			slog.Info("exiting UDP server")
 			return nil
 		default:
 			n, addr, err := connection.ReadFromUDP(buffer)
@@ -48,7 +48,7 @@ func (k *KapingerUDPServer) Start(ctx context.Context) error {
 			payload := strings.TrimSpace(string(buffer[0 : n-1]))
 
 			if payload == "STOP" {
-				fmt.Println("Exiting UDP server")
+				slog.Info("exiting UDP server", "reason", "STOP command received")
 				return nil
 			}
 

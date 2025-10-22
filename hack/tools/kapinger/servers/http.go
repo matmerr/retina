@@ -3,7 +3,7 @@ package servers
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 )
@@ -28,7 +28,7 @@ func (k *KapingerHTTPServer) Start(ctx context.Context) error {
 
 	addr := ":" + strconv.Itoa(k.port)
 
-	log.Printf("[HTTP] Listening on %+v\n", addr)
+	slog.Info("HTTP server listening", "addr", addr)
 
 	server := &http.Server{
 		Addr:    addr,

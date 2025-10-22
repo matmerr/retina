@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -83,7 +83,7 @@ func (k *KapingerHTTPClient) MakeRequests(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("HTTP client context done")
+			slog.Info("HTTP client context done")
 			return nil
 		case <-ticker.C:
 			go func() {
@@ -91,9 +91,9 @@ func (k *KapingerHTTPClient) MakeRequests(ctx context.Context) error {
 					for _, url := range k.urls {
 						body, err := k.makeRequest(ctx, url)
 						if err != nil {
-							log.Printf("error making request: %v", err)
+							slog.Error("error making request", "error", err, "url", url)
 						} else {
-							log.Printf("response from %s: %s\n", url, string(body))
+							slog.Info("response received", "url", url, "response", string(body))
 						}
 					}
 				}
@@ -120,7 +120,7 @@ func (k *KapingerHTTPClient) makeRequest(ctx context.Context, url string) ([]byt
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatalf("Error reading response body from %s: %v", url, err)
+		slog.Error("error reading response body", "url", url, "error", err)
 		return nil, err
 	}
 
@@ -141,7 +141,7 @@ func (k *KapingerHTTPClient) getServiceURLs() ([]string, error) {
 	for svc := range services.Items {
 		urls = append(urls, fmt.Sprintf("http://%s.%s.svc.cluster.local:%d/", services.Items[svc].Name, services.Items[svc].Namespace, k.port))
 	}
-	log.Printf("using service URLs: %+v", urls)
+	slog.Info("using service URLs", "urls", urls)
 	return urls, nil
 }
 
@@ -163,7 +163,7 @@ func (k *KapingerHTTPClient) getPodURLs() ([]string, error) {
 	for _, pod := range pods.Items {
 		urls = append(urls, fmt.Sprintf("http://%s:%d", pod.Status.PodIP, k.port))
 	}
-	log.Printf("using pod URL's: %+v", urls)
+	slog.Info("using pod URLs", "urls", urls)
 	return urls, nil
 }
 
@@ -177,13 +177,13 @@ func waitForPodsRunning(clientset *kubernetes.Clientset, labelSelector string) e
 			LabelSelector: labelSelector,
 		})
 		if err != nil {
-			log.Printf("error getting pods: %v", err)
+			slog.Error("error getting pods", "error", err)
 			return false, nil
 		}
 
 		for _, pod := range pods.Items {
 			if pod.Status.Phase != corev1.PodRunning {
-				log.Printf("waiting for pod %s to be in Running state (currently %s)", pod.Name, pod.Status.Phase)
+				slog.Info("waiting for pod to be in Running state", "pod", pod.Name, "currentPhase", pod.Status.Phase)
 				return false, nil
 			}
 		}

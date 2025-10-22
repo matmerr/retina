@@ -2,7 +2,7 @@ package servers
 
 import (
 	"context"
-	"log"
+	"log/slog"
 
 	"github.com/microsoft/retina/hack/tools/kapinger/config"
 )
@@ -20,7 +20,7 @@ func (k *Kapinger) Start(ctx context.Context) {
 		go func(i int) {
 			err := k.servers[i].Start(ctx)
 			if err != nil {
-				log.Printf("Error starting server: %s\n", err)
+				slog.Error("error starting server", "error", err)
 			}
 		}(i)
 	}

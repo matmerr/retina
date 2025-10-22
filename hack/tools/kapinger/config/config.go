@@ -1,7 +1,7 @@
 package config
 
 import (
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"time"
@@ -45,60 +45,60 @@ func LoadConfigFromEnv() *KapingerConfig {
 	k.TCPPort, err = strconv.Atoi(os.Getenv(EnvTCPPort))
 	if err != nil {
 		k.TCPPort = defaultTCPPort
-		log.Printf("%s not set, defaulting to port %d\n", EnvTCPPort, defaultTCPPort)
+		slog.Info("config loaded", "env", EnvTCPPort, "value", k.TCPPort, "default", true)
 	}
 
 	k.UDPPort, err = strconv.Atoi(os.Getenv(EnvUDPPort))
 	if err != nil {
 		k.UDPPort = defaultUDPPort
-		log.Printf("%s not set, defaulting to port %d\n", EnvUDPPort, defaultUDPPort)
+		slog.Info("config loaded", "env", EnvUDPPort, "value", k.UDPPort, "default", true)
 	}
 
 	k.HTTPPort, err = strconv.Atoi(os.Getenv(EnvHTTPPort))
 	if err != nil {
 		k.HTTPPort = defaultHTTPPort
-		log.Printf("%s not set, defaulting to port %d\n", EnvHTTPPort, defaultHTTPPort)
+		slog.Info("config loaded", "env", EnvHTTPPort, "value", k.HTTPPort, "default", true)
 	}
 
 	k.BurstVolume, err = strconv.Atoi(os.Getenv(EnvBurstVolume))
 	if err != nil {
 		k.BurstVolume = defaultBurstVolume
-		log.Printf("%s not set, defaulting to %d\n", EnvBurstVolume, defaultBurstVolume)
+		slog.Info("config loaded", "env", EnvBurstVolume, "value", k.BurstVolume, "default", true)
 	} else {
-		log.Printf("%s set to: %d\n", EnvBurstVolume, k.BurstVolume)
+		slog.Info("config loaded", "env", EnvBurstVolume, "value", k.BurstVolume)
 	}
 
 	burstInterval, err := strconv.Atoi(os.Getenv(EnvBurstInterval))
 	if err != nil {
 		k.BurstInterval = defaultBurstInterval
-		log.Printf("%s not set, defaulting to %d\n", EnvBurstInterval, defaultBurstInterval)
+		slog.Info("config loaded", "env", EnvBurstInterval, "value", k.BurstInterval, "default", true)
 	} else {
 		k.BurstInterval = time.Duration(burstInterval) * time.Millisecond
-		log.Printf("%s set to: %s\n", EnvBurstInterval, k.BurstInterval)
+		slog.Info("config loaded", "env", EnvBurstInterval, "value", k.BurstInterval)
 	}
 
 	k.DNSClientEnabled, err = strconv.ParseBool(os.Getenv(EnvDNSClientEnabled))
 	if err != nil {
 		k.DNSClientEnabled = false
-		log.Printf("%s not set or invalid, defaulting to false\n", EnvDNSClientEnabled)
+		slog.Info("config loaded", "env", EnvDNSClientEnabled, "value", k.DNSClientEnabled, "default", true)
 	} else {
-		log.Printf("%s set to: %t\n", EnvDNSClientEnabled, k.DNSClientEnabled)
+		slog.Info("config loaded", "env", EnvDNSClientEnabled, "value", k.DNSClientEnabled)
 	}
 
 	k.DNSClientAddress = os.Getenv(EnvDNSClientAddress)
 	if k.DNSClientAddress == "" {
 		k.DNSClientAddress = defaultDNSAddress
-		log.Printf("%s not set, defaulting to %s\n", EnvDNSClientAddress, defaultDNSAddress)
+		slog.Info("config loaded", "env", EnvDNSClientAddress, "value", k.DNSClientAddress, "default", true)
 	} else {
-		log.Printf("%s set to: %s\n", EnvDNSClientAddress, k.DNSClientAddress)
+		slog.Info("config loaded", "env", EnvDNSClientAddress, "value", k.DNSClientAddress)
 	}
 
 	k.MeshClientEnabled, err = strconv.ParseBool(os.Getenv(EnvMeshClientEnabled))
 	if err != nil {
 		k.MeshClientEnabled = false
-		log.Printf("%s not set or invalid, defaulting to false\n", EnvMeshClientEnabled)
+		slog.Info("config loaded", "env", EnvMeshClientEnabled, "value", k.MeshClientEnabled, "default", true)
 	} else {
-		log.Printf("%s set to: %t\n", EnvMeshClientEnabled, k.MeshClientEnabled)
+		slog.Info("config loaded", "env", EnvMeshClientEnabled, "value", k.MeshClientEnabled)
 	}
 
 	return k

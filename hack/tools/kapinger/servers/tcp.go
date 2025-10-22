@@ -3,7 +3,7 @@ package servers
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 )
 
@@ -29,12 +29,12 @@ func (k *KapingerTCPServer) Start(ctx context.Context) error {
 	}
 	defer listener.Close()
 
-	log.Printf("[TCP] Listening on %+v\n", listener.Addr().String())
+	slog.Info("TCP server listening", "addr", listener.Addr().String())
 
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Println("Exiting TCP server")
+			slog.Info("exiting TCP server")
 			return nil
 		default:
 			connection, err := listener.Accept()
