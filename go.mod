@@ -1,11 +1,11 @@
 module github.com/microsoft/retina
 
-go 1.24.1
+go 1.25.0
 
 require (
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/google/uuid v1.6.0
-	github.com/prometheus/client_golang v1.21.1
+	github.com/prometheus/client_golang v1.24.1
 	github.com/spf13/cobra v1.9.1
 	go.uber.org/zap v1.27.0
 	k8s.io/client-go v0.30.3
@@ -119,7 +119,7 @@ require (
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/gofrs/uuid v4.2.0+incompatible // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.1 // indirect
-	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/google/btree v1.1.2 // indirect
 	github.com/google/gnostic-models v0.6.9-0.20230804172637-c7be7c783f49 // indirect
@@ -147,7 +147,7 @@ require (
 	github.com/jmoiron/sqlx v1.3.5 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/josharian/native v1.1.0 // indirect
-	github.com/klauspost/compress v1.18.0 // indirect
+	github.com/klauspost/compress v1.19.1 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
@@ -189,7 +189,7 @@ require (
 	github.com/petermattis/goid v0.0.0-20180202154549-b0b1615b78e5 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/procfs v0.15.1 // indirect
+	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/rubenv/sql-migrate v1.5.2 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/s3rj1k/go-fanotify/fanotify v0.0.0-20210917134616-9c00a300bb7a // indirect
@@ -223,11 +223,11 @@ require (
 	go.starlark.net v0.0.0-20230814145427-12f4cb8177e4 // indirect
 	go.uber.org/dig v1.17.1 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
-	golang.org/x/crypto v0.36.0 // indirect
-	golang.org/x/mod v0.24.0 // indirect
-	golang.org/x/text v0.23.0 // indirect
+	golang.org/x/crypto v0.54.0 // indirect
+	golang.org/x/mod v0.37.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.11.0 // indirect
-	golang.org/x/tools v0.31.0 // indirect
+	golang.org/x/tools v0.47.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/genproto v0.0.0-20241118233622-e639e219e697 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250218202821-56aae31c358a // indirect
@@ -254,14 +254,14 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/spf13/pflag v1.0.6
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/net v0.37.0 // indirect
-	golang.org/x/oauth2 v0.26.0 // indirect
-	golang.org/x/sync v0.12.0
-	golang.org/x/sys v0.31.0
-	golang.org/x/term v0.30.0 // indirect
-	google.golang.org/protobuf v1.36.5
+	golang.org/x/net v0.57.0 // indirect
+	golang.org/x/oauth2 v0.36.0 // indirect
+	golang.org/x/sync v0.22.0
+	golang.org/x/sys v0.47.0
+	golang.org/x/term v0.45.0 // indirect
+	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/api v0.30.3
@@ -311,8 +311,8 @@ require (
 	github.com/onsi/ginkgo/v2 v2.23.0
 	github.com/onsi/gomega v1.36.2
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_model v0.6.1
-	github.com/prometheus/common v0.63.0
+	github.com/prometheus/client_model v0.6.2
+	github.com/prometheus/common v0.70.1
 	github.com/safchain/ethtool v0.5.10
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.19.0
@@ -642,6 +642,8 @@ require (
 	go.uber.org/automaxprocs v1.6.0 // indirect
 	gocloud.dev v0.37.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20250210185358-939b2ce775ac // indirect
+	golang.org/x/tools/go/expect v0.1.1-deprecated // indirect
+	golang.org/x/tools/go/packages/packagestest v0.1.1-deprecated // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	google.golang.org/api v0.223.0 // indirect
 	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
