@@ -259,7 +259,7 @@ require (
 	golang.org/x/net v0.37.0 // indirect
 	golang.org/x/oauth2 v0.26.0 // indirect
 	golang.org/x/sync v0.12.0
-	golang.org/x/sys v0.31.0
+	golang.org/x/sys v0.38.0
 	golang.org/x/term v0.30.0 // indirect
 	google.golang.org/protobuf v1.36.5
 	gopkg.in/yaml.v2 v2.4.0 // indirect
@@ -313,7 +313,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_model v0.6.1
 	github.com/prometheus/common v0.63.0
-	github.com/safchain/ethtool v0.5.10
+	github.com/safchain/ethtool v0.7.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.19.0
 	github.com/vishvananda/netlink v1.2.1-beta.2.0.20240524165444-4d4ba1473f21
