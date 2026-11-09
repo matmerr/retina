@@ -41,7 +41,7 @@ jobs:
           languages: ${{ matrix.language }}
       - name: Autobuild
         if: env.IS_NOT_MERGE_GROUP
-        uses: github/codeql-action/autobuild@dd746615b3b9d728a6a37ca2045b68ca76d4841a # v3.28.8
+        uses: github/codeql-action/autobuild@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
       - name: Perform CodeQL Analysis
         if: env.IS_NOT_MERGE_GROUP
         uses: github/codeql-action/analyze@dd746615b3b9d728a6a37ca2045b68ca76d4841a # v3.28.8
